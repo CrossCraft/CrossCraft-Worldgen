@@ -1,26 +1,22 @@
 const std = @import("std");
-const perlin = @import("perlin.zig");
+const perlin = @import("zig");
 
 var heightMap : [256 * 256]i32 = undefined;
 const waterLevel : i32 = 32;
 var map_seed: u32 = 0;
 var worldData: [*]u8 = undefined;
 
+extern fn onoise(octaves: usize, x: f64, y: f64, seed: u32) f64;
+extern fn noise1(x: f32, y: f32) f64;
+extern fn noise2(x: f32, y: f32) f64;
+extern fn generate_heightmap(hmap: *anyopaque) void;
+extern fn smooth_heightmap(hmap: *anyopaque) void;
+
 fn getIdx(x: u32, y: u32, z: u32) usize {
     if(x >= 0 and x < 256 and y >= 0 and y < 64 and z >= 0 and z < 256)
         return (y * 256 * 256) + (z * 256) + x;
     
     return 0;
-}
-
-fn noise1(x: f32, y: f32) f64 {
-    var n1 = perlin.onoise(8, x, y, map_seed + 1);
-    return perlin.onoise(8, x + n1, y, map_seed + 2);
-}
-
-fn noise2(x: f32, y: f32) f64 {
-    var n1 = perlin.onoise(8, x, y, map_seed + 3);
-    return perlin.onoise(8, x + n1, y, map_seed + 4);
 }
 
 const RndGen = std.rand.DefaultPrng;
@@ -33,9 +29,9 @@ pub export fn generate(seed: u32, data: [*]u8) void {
     rnd = RndGen.init(seed);
 
     //"Raising..."
-    generate_heightmap();
+    generate_heightmap(&heightMap);
     //"Eroding..."
-    smooth_heightmap();
+    smooth_heightmap(&heightMap);
     //"Soiling..."
     create_strata();
 
@@ -57,59 +53,6 @@ pub export fn generate(seed: u32, data: [*]u8) void {
     create_plants();
 }
 
-fn generate_heightmap() void {
-
-    var z : usize = 0;
-    while(z < 256) : (z += 1) {
-
-    var x : usize = 0;
-    while(x < 256) : (x += 1) {
-
-    var xf = @intToFloat(f32, x);
-    var zf = @intToFloat(f32, z);
-
-    var heightLow = noise1(xf * 1.3, zf * 1.3) / 6.0 - 4.0;
-    var heightHigh = noise2(xf * 1.3, zf * 1.3) / 5.0 + 6.0;
-
-    var heightResult : f64 = 0.0;
-
-    if(perlin.onoise(6, xf, zf, map_seed + 5) / 8.0 > 0) {
-        heightResult = heightLow;
-    } else {
-        heightResult = if (heightHigh > heightLow) heightHigh else heightLow;
-    }
-
-    heightResult /= 2.0;    
-
-    if(heightResult < 0) 
-        heightResult *= 0.8;
-
-    heightMap[x + z * 256] = waterLevel + @floatToInt(i32, heightResult);
-    }
-    }
-}
-
-fn smooth_heightmap() void {
-    var z : usize = 0;
-    while(z < 256) : (z += 1) {
-
-    var x : usize = 0;
-    while(x < 256) : (x += 1) {
-
-    var xf = @intToFloat(f32, x);
-    var zf = @intToFloat(f32, z);
-
-    var a = noise1(xf * 2, zf * 2) / 8.0;
-    var b : i32 = if(noise2(xf * 2, zf * 2) > 0) 1 else 0;
-
-    if(a > 2) {
-        heightMap[x + z * 256] = @floatToInt(i32, @intToFloat(f32, heightMap[x + z * 256] - b) / 2.0) * 2 + b;
-    }
-
-    }
-    }
-}
-
 fn create_strata() void {
     
     var z : usize = 0;
@@ -118,7 +61,7 @@ fn create_strata() void {
     var x : usize = 0;
     while(x < 256) : (x += 1) {
 
-    var dirtThickness = perlin.onoise(8, @intToFloat(f32, x), @intToFloat(f32, z), map_seed + 1) / 24.0 - 4.0;
+    var dirtThickness = onoise(8, @intToFloat(f32, x), @intToFloat(f32, z), map_seed + 1) / 24.0 - 4.0;
     var dirtTransition = heightMap[x + z * 256];
     var stoneTransition = dirtTransition + @floatToInt(i32, dirtThickness);
 
@@ -195,8 +138,8 @@ fn create_surface() void {
         var xf = @intToFloat(f32, x);
         var zf = @intToFloat(f32, z);
 
-        var is_sand = perlin.onoise(8, xf, zf, map_seed + 1) > 8.0;
-        var is_gravel = perlin.onoise(8, xf, zf, map_seed + 2) > 12.0;
+        var is_sand = onoise(8, xf, zf, map_seed + 1) > 8.0;
+        var is_gravel = onoise(8, xf, zf, map_seed + 2) > 12.0;
 
         var y = heightMap[x + z * 256];
 
